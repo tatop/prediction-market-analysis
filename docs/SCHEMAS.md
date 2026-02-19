@@ -1,6 +1,33 @@
 # Data Schemas
 
-Data is stored as Parquet files in `data/{kalshi,polymarket}/`.
+Data is stored as Parquet files in `data/{kalshi,polymarket,alpaca}/`.
+
+## Alpaca Bars (OHLCV)
+
+Each row represents a stock/ETF bar from Alpaca historical market data.
+
+Location:
+- `data/alpaca/bars/{SYMBOL}_{TIMEFRAME}.parquet`
+
+Examples:
+- `data/alpaca/bars/SPY_1Day.parquet`
+- `data/alpaca/bars/NVDA_1Day.parquet`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `symbol` | string | Ticker symbol (e.g., `SPY`, `AAPL`) |
+| `timestamp` | datetime | Bar timestamp |
+| `open` | float | Open price |
+| `high` | float | High price |
+| `low` | float | Low price |
+| `close` | float | Close price |
+| `volume` | int | Shares traded in the bar |
+| `trade_count` | int | Number of trades in the bar |
+| `vwap` | float | Volume-weighted average price |
+| `timeframe` | string | Timeframe used for indexing (e.g., `1Day`, `1Hour`) |
+| `_fetched_at` | datetime | When this record was fetched |
+
+**Deduplication key:** `symbol`, `timestamp`, `timeframe`
 
 ## Kalshi Markets
 

@@ -1,19 +1,20 @@
 # Prediction Market Analysis
 
-A framework for analyzing prediction market data, including the largest publicly available dataset of Polymarket and Kalshi market and trade data. Provides tools for data collection, storage, and running analysis scripts that generate figures and statistics.
+A framework for indexing and analyzing prediction market data (Kalshi, Polymarket) plus market benchmark data from Alpaca (OHLCV bars). It provides data collection tools, Parquet-based storage, and analysis scripts that generate figures and statistics.
 
 ## Overview
 
-This project enables research and analysis of prediction markets by providing:
-- Pre-collected datasets from Polymarket and Kalshi
-- Data collection indexers for gathering new data
-- Analysis framework for generating figures and statistics
+This project enables research and analysis by providing:
+- Pre-collected datasets for Kalshi and Polymarket
+- Data collection indexers for Kalshi, Polymarket, and Alpaca
+- Analysis scripts for platform-specific and cross-symbol metrics
 
 Currently supported features:
-- Market metadata collection (Kalshi & Polymarket)
-- Trade history collection via API and blockchain
-- Parquet-based storage with automatic progress saving
-- Extensible analysis script framework
+- Kalshi market metadata + trade history indexing
+- Polymarket market metadata + CTF and legacy FPMM trade indexing
+- Alpaca OHLCV bar indexing for configurable stock/ETF symbols
+- Parquet-based storage with resumable collection flows
+- Extensible analysis framework with PNG/PDF/CSV/JSON outputs
 
 ## Installation & Usage
 
@@ -23,7 +24,23 @@ Requires Python 3.9+. Install dependencies with [uv](https://github.com/astral-s
 uv sync
 ```
 
-Download and extract the pre-collected dataset (36GiB compressed):
+### Environment Variables
+
+Create a `.env` file for API-backed indexers:
+
+```env
+POLYGON_RPC=
+POLYMARKET_START_BLOCK=33605403
+ALPACA_API_KEY=
+ALPACA_SECRET_KEY=
+```
+
+- `POLYGON_RPC` is needed for Polymarket blockchain indexers.
+- `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` are needed for the Alpaca bars indexer.
+
+### Download Pre-Collected Dataset
+
+Download and extract the pre-collected dataset (Kalshi + Polymarket):
 
 ```bash
 make setup
@@ -31,25 +48,41 @@ make setup
 
 This downloads `data.tar.zst` from [Cloudflare R2 Storage](https://s3.jbecker.dev/data.tar.zst) and extracts it to `data/`.
 
-### Data Collection
+## Data Collection
 
-Collect market and trade data from prediction market APIs:
+Collect data from APIs/blockchain sources:
 
 ```bash
 make index
 ```
 
-This opens an interactive menu to select which indexer to run. Data is saved to `data/kalshi/` and `data/polymarket/` directories. Progress is saved automatically, so you can interrupt and resume collection.
+This opens an interactive menu to select an indexer (including `alpaca_bars`).
 
-### Running Analyses
+Data is saved under:
+- `data/kalshi/`
+- `data/polymarket/`
+- `data/alpaca/bars/`
+
+For Alpaca bars, files are partitioned by symbol and timeframe (e.g. `SPY_1Day.parquet`).
+
+## Running Analyses
 
 ```bash
 make analyze
 ```
 
-This opens an interactive menu to select which analysis to run. You can run all analyses or select a specific one. Output files (PNG, PDF, CSV, JSON) are saved to `output/`.
+This opens an interactive menu to select analyses. Outputs (PNG, PDF, CSV, JSON, GIF when applicable) are saved to `output/`.
 
-### Packaging Data
+The Alpaca analysis currently included is:
+- `alpaca_bar_metrics` (cumulative return, annualized volatility, volume, and return-vs-volatility comparison by symbol)
+
+You can also run one analysis directly:
+
+```bash
+uv run main.py analyze alpaca_bar_metrics
+```
+
+## Packaging Data
 
 To compress the data directory for storage/distribution:
 
@@ -63,14 +96,19 @@ This creates a zstd-compressed tar archive (`data.tar.zst`) and removes the `dat
 
 ```
 ├── src/
-│   ├── analysis/           # Analysis scripts
-│   │   ├── kalshi/         # Kalshi-specific analyses
-│   │   └── polymarket/     # Polymarket-specific analyses
-│   ├── indexers/           # Data collection indexers
-│   │   ├── kalshi/         # Kalshi API client and indexers
+│   ├── analysis/
+│   │   ├── alpaca/         # Alpaca analyses (e.g., bar metrics)
+│   │   ├── kalshi/         # Kalshi analyses
+│   │   ├── polymarket/     # Polymarket analyses
+│   │   └── comparison/     # Cross-platform analyses
+│   ├── indexers/
+│   │   ├── alpaca/         # Alpaca bars client + indexer
+│   │   ├── kalshi/         # Kalshi API client + indexers
 │   │   └── polymarket/     # Polymarket API/blockchain indexers
 │   └── common/             # Shared utilities and interfaces
-├── data/                   # Data directory (extracted from data.tar.zst)
+├── data/
+│   ├── alpaca/
+│   │   └── bars/
 │   ├── kalshi/
 │   │   ├── markets/
 │   │   └── trades/
@@ -79,12 +117,12 @@ This creates a zstd-compressed tar archive (`data.tar.zst`) and removes the `dat
 │       ├── markets/
 │       └── trades/
 ├── docs/                   # Documentation
-└── output/                 # Analysis outputs (figures, CSVs)
+└── output/                 # Analysis outputs
 ```
 
 ## Documentation
 
-- [Data Schemas](docs/SCHEMAS.md) - Parquet file schemas for markets and trades
+- [Data Schemas](docs/SCHEMAS.md) - Parquet schemas for Kalshi and Polymarket datasets
 - [Writing Analyses](docs/ANALYSIS.md) - Guide for writing custom analysis scripts
 
 ## Contributing
@@ -101,4 +139,4 @@ If you've found an issue or have a question, please open an issue [here](https:/
 
 - Becker, J. (2026). _The Microstructure of Wealth Transfer in Prediction Markets_. Jbecker. https://jbecker.dev/research/prediction-market-microstructure
 
-If you have used or plan to use this dataset in your research, please reach out via [email](mailto:jonathan@jbecker.dev) or [Twitter](https://x.com/BeckerrJon) -- i'd love to hear about what you're using the data for! Additionally, feel free to open a PR and update this section with a link to your paper.
+If you have used or plan to use this dataset in your research, please reach out via [email](mailto:jonathan@jbecker.dev) or [Twitter](https://x.com/BeckerrJon) -- I'd love to hear about what you're using the data for! Additionally, feel free to open a PR and update this section with a link to your paper.

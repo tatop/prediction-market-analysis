@@ -1,68 +1,143 @@
 # Writing Analysis Scripts
 
-Analysis scripts live in `src/analysis/{kalshi,polymarket}/` and extend the `Analysis` base class.
+Analysis scripts live in:
+- `src/analysis/alpaca/`
+- `src/analysis/kalshi/`
+- `src/analysis/polymarket/`
+- `src/analysis/comparison/`
+
+All analyses should extend `Analysis` and return `AnalysisOutput`.
 
 ## Running Analyses
+
+Interactive menu:
 
 ```bash
 make analyze
 ```
 
-This opens an interactive menu to select which analysis to run. You can run all analyses or select a specific one. Output files (PNG, PDF, CSV, JSON) are saved to `output/`.
+Run one analysis directly:
+
+```bash
+uv run main.py analyze <analysis_name>
+```
+
+Run all analyses:
+
+```bash
+uv run main.py analyze all
+```
+
+Outputs are saved in `output/`.
+
+## Alpaca Quickstart
+
+```bash
+# 1) Install deps
+uv sync
+
+# 2) Ensure .env has ALPACA_API_KEY and ALPACA_SECRET_KEY
+
+# 3) Index bars (interactive menu -> select alpaca_bars)
+make index
+
+# 4) Run Alpaca analysis
+uv run main.py analyze alpaca_bar_metrics
+# or: make analyze (then pick alpaca_bar_metrics)
+```
+
+Alpaca bars are written to `data/alpaca/bars/`, and analysis outputs are written to `output/`.
 
 ## Basic Template
 
 ```python
 """Brief description of what this analysis does."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import duckdb
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
 
-from src.common.analysis import Analysis
+from src.common.analysis import Analysis, AnalysisOutput
+from src.common.interfaces.chart import ChartConfig, ChartType
 
 
 class MyAnalysis(Analysis):
-    name = "my_analysis"
-    description = "Brief description of what this analysis does"
+    """Example analysis."""
 
-    def run(self) -> tuple[Figure, dict]:
+    def __init__(self, trades_dir: Path | str | None = None):
+        super().__init__(
+            name="my_analysis",
+            description="Brief description of what this analysis does",
+        )
         base_dir = Path(__file__).parent.parent.parent.parent
-        kalshi_trades = base_dir / "data" / "kalshi" / "trades"
-        kalshi_markets = base_dir / "data" / "kalshi" / "markets"
+        self.trades_dir = Path(trades_dir or base_dir / "data" / "kalshi" / "trades")
 
+    def run(self) -> AnalysisOutput:
         con = duckdb.connect()
-        df = con.execute(
-            f"""
-            SELECT yes_price, count, taker_side
-            FROM '{kalshi_trades}/*.parquet'
-            WHERE yes_price BETWEEN 1 AND 99
-            LIMIT 1000
-            """
-        ).df()
 
-        # Create visualization
+        with self.progress("Loading data"):
+            df = con.execute(
+                f"""
+                SELECT yes_price, count
+                FROM '{self.trades_dir}/*.parquet'
+                WHERE yes_price BETWEEN 1 AND 99
+                """
+            ).df()
+
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.bar(df["yes_price"], df["count"])
-        ax.set_xlabel("Price (cents)")
-        ax.set_ylabel("Count")
+        ax.hist(df["yes_price"], bins=20)
         ax.set_title("My Analysis")
+        ax.set_xlabel("Price")
+        ax.set_ylabel("Frequency")
         plt.tight_layout()
 
-        # Return figure and data dict (for CSV/JSON export)
-        return fig, df.to_dict(orient="records")
+        chart = ChartConfig(
+            type=ChartType.BAR,
+            data=df.head(100).to_dict("records"),
+            xKey="yes_price",
+            yKeys=["count"],
+            title="My Analysis",
+        )
+
+        return AnalysisOutput(
+            figure=fig,
+            data=df,
+            chart=chart,
+        )
 ```
 
-## Common Query Patterns
+## Alpaca Query Pattern (OHLCV bars)
 
-### Join trades with market outcomes (Kalshi)
+```sql
+SELECT
+    symbol,
+    timestamp,
+    open,
+    high,
+    low,
+    close,
+    volume,
+    vwap
+FROM 'data/alpaca/bars/*.parquet'
+ORDER BY symbol, timestamp
+```
+
+Common derived metrics:
+- Cumulative return: `(last_close / first_close - 1) * 100`
+- Daily return series: `close.pct_change()`
+- Annualized volatility: `std(daily_returns) * sqrt(252)`
+
+## Kalshi Query Patterns
+
+### Join trades with market outcomes
 
 ```sql
 WITH resolved_markets AS (
     SELECT ticker, result
-    FROM '{kalshi_markets}/*.parquet'
+    FROM 'data/kalshi/markets/*.parquet'
     WHERE status = 'finalized'
       AND result IN ('yes', 'no')
 )
@@ -72,7 +147,7 @@ SELECT
     t.taker_side,
     m.result,
     CASE WHEN t.taker_side = m.result THEN 1 ELSE 0 END AS taker_won
-FROM '{kalshi_trades}/*.parquet' t
+FROM 'data/kalshi/trades/*.parquet' t
 INNER JOIN resolved_markets m ON t.ticker = m.ticker
 ```
 
@@ -85,7 +160,7 @@ WITH all_positions AS (
         CASE WHEN taker_side = 'yes' THEN yes_price ELSE no_price END AS price,
         count,
         'taker' AS role
-    FROM '{kalshi_trades}/*.parquet'
+    FROM 'data/kalshi/trades/*.parquet'
 
     UNION ALL
 
@@ -94,7 +169,7 @@ WITH all_positions AS (
         CASE WHEN taker_side = 'yes' THEN no_price ELSE yes_price END AS price,
         count,
         'maker' AS role
-    FROM '{kalshi_trades}/*.parquet'
+    FROM 'data/kalshi/trades/*.parquet'
 )
 SELECT price, role, SUM(count) AS total_contracts
 FROM all_positions
@@ -102,66 +177,59 @@ GROUP BY price, role
 ORDER BY price
 ```
 
-### Extract category from event_ticker
+## Polymarket Query Pattern
 
 ```sql
 SELECT
-    CASE
-        WHEN event_ticker IS NULL OR event_ticker = '' THEN 'independent'
-        ELSE regexp_extract(event_ticker, '^([A-Z0-9]+)', 1)
-    END AS category,
-    COUNT(*) AS market_count
-FROM '{kalshi_markets}/*.parquet'
-GROUP BY category
+    block_number,
+    maker_asset_id,
+    taker_asset_id,
+    maker_amount,
+    taker_amount
+FROM 'data/polymarket/trades/*.parquet'
 ```
 
-## Using the Categories Utility
+Tip: join against `data/polymarket/blocks/*.parquet` for time-based aggregations.
 
-For grouping Kalshi markets into high-level categories (Sports, Politics, Crypto, etc.):
+## Using the Categories Utility (Kalshi)
+
+For grouping markets into high-level categories:
 
 ```python
 from src.analysis.kalshi.util.categories import get_group, get_hierarchy, GROUP_COLORS
 
-# Get high-level group
-group = get_group("NFLGAME")  # Returns "Sports"
-
-# Get full hierarchy (group, category, subcategory)
-hierarchy = get_hierarchy("NFLGAME")  # Returns ("Sports", "NFL", "Games")
-
-# Use predefined colors for consistent visualizations
-color = GROUP_COLORS["Sports"]  # Returns "#1f77b4"
+group = get_group("NFLGAME")
+hierarchy = get_hierarchy("NFLGAME")
+color = GROUP_COLORS["Sports"]
 ```
 
 ## Progress Indicator
 
-For long-running operations, use the `progress()` context manager to show a spinner:
+Use `self.progress()` for expensive loading/compute steps:
 
 ```python
-def run(self) -> AnalysisOutput:
-    with self.progress("Loading trades data"):
-        df = con.execute("SELECT * FROM large_table").df()
+with self.progress("Loading trades data"):
+    df = con.execute("SELECT * FROM ...").df()
 
-    with self.progress("Computing aggregations"):
-        # expensive computation
-        result = df.groupby(...).agg(...)
+with self.progress("Computing aggregates"):
+    result = df.groupby(...).agg(...)
 ```
 
 ## Output Conventions
 
-The `Analysis.save()` method handles output automatically:
-- PNG at 300 DPI for presentations
-- PDF for papers
-- CSV/JSON for raw data
+`Analysis.save()` supports:
+- Figure: `png`, `pdf`, `svg`, `gif` (animated only)
+- Data: `csv`
+- Web chart config: `json`
 
-All outputs are saved to `output/` with the analysis name as the filename.
+Default save path is `output/` with filename `<analysis_name>.<ext>`.
 
 ## Dependencies
 
-Scripts have access to these libraries (see `pyproject.toml`):
-
-- `duckdb` - SQL queries on Parquet files
-- `pandas` - DataFrames
-- `matplotlib` - Plotting
-- `scipy` - Statistical functions
-- `brokenaxes` - Plots with broken axes
-- `squarify` - Treemap visualizations
+Analyses can use these project dependencies:
+- `duckdb`
+- `pandas`
+- `matplotlib`
+- `scipy`
+- `brokenaxes`
+- `squarify`

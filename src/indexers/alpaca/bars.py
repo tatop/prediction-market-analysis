@@ -14,7 +14,7 @@ from src.indexers.alpaca.client import AlpacaClient
 
 DATA_DIR = Path("data/alpaca/bars")
 
-DEFAULT_SYMBOLS = ["SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA"]
+DEFAULT_SYMBOLS = ["SPY", "QQQ"]
 DEFAULT_TIMEFRAME = "1Day"
 DEFAULT_START = datetime(2020, 1, 1)
 

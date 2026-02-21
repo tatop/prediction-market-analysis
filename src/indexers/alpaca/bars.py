@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -17,6 +16,7 @@ DATA_DIR = Path("data/alpaca/bars")
 DEFAULT_SYMBOLS = ["SPY", "QQQ"]
 DEFAULT_TIMEFRAME = "1Day"
 DEFAULT_START = datetime(2020, 1, 1)
+DEFAULT_ADJUSTMENT = "split"
 
 
 class AlpacaBarsIndexer(Indexer):
@@ -24,10 +24,11 @@ class AlpacaBarsIndexer(Indexer):
 
     def __init__(
         self,
-        symbols: Optional[list[str]] = None,
+        symbols: list[str] | None = None,
         timeframe: str = DEFAULT_TIMEFRAME,
-        start: Optional[datetime] = None,
-        end: Optional[datetime] = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        adjustment: str = DEFAULT_ADJUSTMENT,
     ):
         super().__init__(
             name="alpaca_bars",
@@ -37,6 +38,7 @@ class AlpacaBarsIndexer(Indexer):
         self._timeframe = timeframe
         self._start = start or DEFAULT_START
         self._end = end
+        self._adjustment = adjustment
 
     def run(self) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,12 +51,14 @@ class AlpacaBarsIndexer(Indexer):
             timeframe=self._timeframe,
             start=self._start,
             end=self._end,
+            adjustment=self._adjustment,
         ):
             records = []
             fetched_at = datetime.utcnow()
             for bar in chunk:
                 record = asdict(bar)
                 record["timeframe"] = self._timeframe
+                record["adjustment"] = self._adjustment
                 record["_fetched_at"] = fetched_at
                 records.append(record)
 
@@ -77,4 +81,7 @@ class AlpacaBarsIndexer(Indexer):
             symbols_in_chunk = df["symbol"].nunique()
             print(f"Stored {len(df)} bars across {symbols_in_chunk} symbols (total: {total})")
 
-        print(f"\nIndexing complete: {total} bars fetched for {len(self._symbols)} symbols")
+        print(
+            f"\nIndexing complete: {total} bars fetched for {len(self._symbols)} symbols "
+            f"with adjustment='{self._adjustment}'"
+        )

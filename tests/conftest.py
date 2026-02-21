@@ -185,6 +185,38 @@ def _make_polymarket_blocks(ctf_trades: pd.DataFrame, legacy_trades: pd.DataFram
     )
 
 
+def _make_alpaca_bars() -> pd.DataFrame:
+    """Build Alpaca bars DataFrame with multiple symbols and enough history for returns."""
+    rows = []
+    start = pd.Timestamp("2024-05-01")
+    symbols = {
+        "SPY": [500 + i * 0.8 + (i % 5) * 0.2 for i in range(40)],
+        "QQQ": [430 + i * 1.0 + ((i + 2) % 4) * 0.3 for i in range(40)],
+        "IWM": [200 + i * 0.4 + ((i + 1) % 6) * 0.15 for i in range(40)],
+    }
+
+    for symbol, closes in symbols.items():
+        for i, close in enumerate(closes):
+            ts = start + pd.Timedelta(days=i)
+            open_price = close * 0.997
+            high = close * 1.004
+            low = close * 0.994
+            rows.append(
+                {
+                    "symbol": symbol,
+                    "timestamp": ts,
+                    "open": round(open_price, 4),
+                    "high": round(high, 4),
+                    "low": round(low, 4),
+                    "close": round(close, 4),
+                    "volume": 1_000_000 + i * 1_000,
+                    "vwap": round((high + low + close) / 3, 4),
+                }
+            )
+
+    return pd.DataFrame(rows)
+
+
 # -- Session-scoped fixtures --
 
 
@@ -247,7 +279,19 @@ def collateral_lookup_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def bars_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    d = tmp_path_factory.mktemp("alpaca_bars")
+    bars = _make_alpaca_bars()
+
+    for symbol, group in bars.groupby("symbol"):
+        group.to_parquet(d / f"{symbol}_1Day.parquet", index=False)
+
+    return d
+
+
+@pytest.fixture(scope="session")
 def all_fixture_dirs(
+    bars_dir: Path,
     kalshi_trades_dir: Path,
     kalshi_markets_dir: Path,
     polymarket_trades_dir: Path,
@@ -258,6 +302,7 @@ def all_fixture_dirs(
 ) -> dict[str, Path]:
     """Bundle all fixture directories for easy access."""
     return {
+        "bars_dir": bars_dir,
         "kalshi_trades_dir": kalshi_trades_dir,
         "kalshi_markets_dir": kalshi_markets_dir,
         "polymarket_trades_dir": polymarket_trades_dir,

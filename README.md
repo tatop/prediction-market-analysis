@@ -64,6 +64,7 @@ Data is saved under:
 - `data/alpaca/bars/`
 
 For Alpaca bars, files are partitioned by symbol and timeframe (e.g. `SPY_1Day.parquet`).
+By default, bars are fetched with Alpaca `split` adjustment so historical prices remain consistent across stock splits.
 
 ## Running Analyses
 
@@ -73,8 +74,10 @@ make analyze
 
 This opens an interactive menu to select analyses. Outputs (PNG, PDF, CSV, JSON, GIF when applicable) are saved to `output/`.
 
-The Alpaca analysis currently included is:
+The Alpaca analyses currently included are:
 - `alpaca_bar_metrics` (cumulative return, annualized volatility, volume, and return-vs-volatility comparison by symbol)
+- `alpaca_drawdown_metrics` (max drawdown, drawdown duration, and recovery time per symbol)
+- `alpaca_return_correlation_matrix` (pairwise correlation matrix of daily returns across symbols)
 
 You can also run one analysis directly:
 

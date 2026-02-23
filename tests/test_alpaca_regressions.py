@@ -5,6 +5,7 @@ import pytest
 
 from src.analysis.alpaca.excess_returns_vs_spy import AlpacaExcessReturnsVsSpyAnalysis
 from src.analysis.alpaca.return_correlation_matrix import AlpacaReturnCorrelationMatrixAnalysis
+from src.analysis.alpaca.risk_adjusted_returns import AlpacaRiskAdjustedReturnsAnalysis
 from src.indexers.alpaca.bars import DEFAULT_SYMBOLS
 
 
@@ -65,3 +66,29 @@ def test_excess_returns_vs_spy_requires_spy_series() -> None:
 
     with pytest.raises(ValueError, match="Benchmark symbol SPY not found"):
         analysis._compute_excess_returns(df)
+
+
+def test_risk_adjusted_returns_handles_symbols_with_too_few_rows() -> None:
+    analysis = AlpacaRiskAdjustedReturnsAnalysis()
+    df = pd.DataFrame(
+        [
+            {"symbol": "SPY", "timestamp": "2024-01-01", "close": 100.0},
+            {"symbol": "SPY", "timestamp": "2024-01-02", "close": 101.0},
+            {"symbol": "QQQ", "timestamp": "2024-01-01", "close": 200.0},
+            {"symbol": "IWM", "timestamp": "2024-01-01", "close": 50.0},
+            {"symbol": "IWM", "timestamp": "2024-01-02", "close": 49.0},
+        ]
+    )
+
+    summary = analysis._compute_summary(df)
+
+    assert summary.empty
+    assert list(summary.columns) == [
+        "symbol",
+        "annualized_sharpe",
+        "annualized_sortino",
+        "mean_daily_return_pct",
+        "daily_volatility_pct",
+        "downside_volatility_pct",
+        "trading_days",
+    ]
